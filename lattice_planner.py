@@ -93,9 +93,52 @@ def slNorder(order):
     return [x**i for i in range(order)]
 
 
-def solveNOrderSL(*args):
+def solveNOrderFunction(*args):
     """
-    给出一系列的sl控制点参数,
+    根据输入参数自动生成n阶方程组,并求解方程系数
+    输入系数组成形式: y=f(x)
+        [[x0,y0,dy0,ddy0...],[xi,yi,dyi,ddyi...]...]
+    输出
+        [k0,k1...kn], order
+    """
+    order = 0
+    # 与输入参数个数等阶数
+    for value_i in args:
+        order += len(value_i) - 1
+
+    matrix_x = np.zeros((order, order))
+    matrix_y = np.zeros((order, 1))
+    index = 0
+
+    for value_i in args:
+        x = value_i[0]  # x的值,ls方程中的s,st方程中的t
+        for row_i, y_diff_i in enumerate(value_i[1:]):
+            # [y0,dy0,...,y1,dy1,...].T
+            matrix_y[index, 0] = y_diff_i  # Y
+            # [[x0**0   x0**1     x0**2 ... x0**(order-1)       x0**order]
+            #  [0     1*x0**0   2*x0**1 ...               order*x0**(order-1)]
+            #  [0     0         2*1*x0**0 ..    order*(order-1)*x0**(order-2)]
+            #  [x1**0   x1**1 ...]
+            #  []]
+            for col_i in range(row_i, order):
+                if row_i == 0:
+                    matrix_x[index, col_i] = x**col_i
+                else:
+                    matrix_x[index, col_i] = col_i * matrix_x[index -
+                                                              1, col_i - 1]
+            index += 1
+
+    print(matrix_x)
+    print(matrix_y)
+
+    coef = np.linalg.solve(matrix_x, matrix_y)  # 系数,列向量
+    # print('value x coef', np.dot(value_s, coef))
+    return coef, order
+
+
+def solveNOrderLS(*args):
+    """
+    给出一系列的ls控制点参数, l = f(s)
     input:[(s0,l0,dl0,ddl0),(s1,l1,dl1,ddl1),(s2,l2,dl2),(s3,l3)]
         每个控制点的参数可以不是4个,但是需要按照 s/l/dl/ddl的顺序来给
     output:
@@ -141,30 +184,33 @@ def NOrderSL(s, coef):
     return l
 
 
-if __name__ == "__main__":
-    # k = QuinticSLSolve(s0=1.0,
-    #                    l0=0.0,
-    #                    c0=1 / 5,
-    #                    k0=0.0,
-    #                    s1=17.0,
-    #                    l1=0.0,
-    #                    c1=1 / 5,
-    #                    k1=0.0)
-    # slist = np.linspace(1.0, 17.0, 32)
-    # l = QuinticSL(slist, k)
-    # plt.plot(slist, l.T)
-    # plt.show()
-    s0 = (1.0, 0.0, 1 / 5.0, 0.0)
-    s1 = (10.0, 1.0)
-    s2 = (13.0, 1.0)
-    s3 = (17.0, 1.0, 1 / 5.0, 0.0)
-    coef, order = solveNOrderSL(s0, s1, s2, s3)
-    s = np.linspace(1.0, 17.0, 100)
+def NOrderFunction(xdata, coef):
+    ydata = []
+    order = len(coef)
+    for x in xdata:
+        y = sum([coef[i] * x**i for i in range(order)])
+        ydata.extend(y)
+    return ydata
 
-    l = NOrderSL(s, coef)
+
+if __name__ == "__main__":
+    s0 = (501.0, 0.0, 1 / 5.0, 0.0)
+    s1 = (510.0, 1.0)
+    s2 = (523.0, 1.0)
+    s3 = (570.0, 1.0, 1 / 5.0, 0.0)
+    coef, order = solveNOrderFunction(s0, s1, s2, s3)
+    s = np.linspace(501.0, 570.0, 5000)
+
+    l = NOrderFunction(s, coef)
     # print(l)
     plt.plot(s, l)
     plt.plot([s0[0]], [s0[1]], 'o')
     plt.plot([s1[0]], [s1[1]], 'o')
     plt.plot([s2[0]], [s2[1]], 'o')
+    plt.plot([s3[0]], [s3[1]], 'o')
+
+    coef, order = solveNOrderLS(s0, s1, s2, s3)
+    l = NOrderSL(s, coef)
+    plt.plot(s, l, '-')
+
     plt.show()
