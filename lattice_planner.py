@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from sympy import diff, symbols
+import math
 """
 l = k0 + k1 * s + k2 * s^2 + k3 * s^3 + k4 * s^4 + k5 * s^5
 dl/ds(c) =  k1     + 2*k2*s^1 + 3*k3*s^2 + 4*k4*s^3 + 5*k5*s^4 : 曲率c. 限定曲率,实质限定了前后轮转角 : 转弯半径为 轴长/tan(前轮转角theta) : 基于简化自行车模型 : 曲率c = tan(theta)/轴长
@@ -14,85 +15,6 @@ dds/ddt =         2*j2     + 6*j3*t^1 + 12*j4*t^2 + 20*j5*t^3 : 加速度 a
 # 起终点在圆弧上,起始状态 (s0=1,l0=0,c0=1/10,k0=0),终点状态(s1=17,l1=0,c1=1/10,k1=0)
 
 
-def QuinticSL(slist, k):
-    l = k[0] + k[1] * slist**1 + k[2] * slist**2 + k[3] * slist**3 + k[
-        4] * slist**4 + k[5] * slist**5
-    return l
-
-
-def SLFunction(s):
-    """
-    input: s
-    return: s_matrix
-    """
-    return [[1.0, s, s**2, s**3, s**4, s**5],
-            [0.0, 1.0, 2.0 * s, 3.0 * s**2, 4.0 * s**3, 5.0 * s**4],
-            [0.0, 0.0, 2.0, 6.0 * s, 12.0 * s**2, 20.0 * s**3]]
-
-
-def QuinticSLSolve(**kwargs):
-    s0 = 1.0
-    if 's0' in kwargs:
-        s0 = kwargs['s0']
-
-    l0 = 0.0
-    if 'l0' in kwargs:
-        l0 = kwargs['l0']
-
-    c0 = 0.0
-    if 'c0' in kwargs:
-        c0 = kwargs['c0']
-
-    k0 = 0.0
-    if 'k0' in kwargs:
-        k0 = kwargs['k0']
-
-    s1 = 30.0
-    if 's1' in kwargs:
-        s1 = kwargs['s1']
-
-    l1 = 0.0
-    if 'l1' in kwargs:
-        l1 = kwargs['l1']
-
-    c1 = 0.0
-    if 'c1' in kwargs:
-        c1 = kwargs['c1']
-
-    k1 = 0.0
-    if 'k1' in kwargs:
-        k1 = kwargs['k1']
-
-    kS0 = SLFunction(s0)
-
-    kS1 = SLFunction(s1)
-
-    kS = np.mat(np.vstack((kS0, kS1)))
-
-    rS = np.mat([l0, c0, k0, l1, c1, k1]).T
-
-    return np.linalg.solve(kS, rS)
-
-
-def SLTraject(order, *args):
-    """
-    input:
-        1.方程的阶数
-        2.单个sl控制点参数,组成方式 s/l/dl/ddl
-    output:
-        [s^i] x k(nx1) = l'(nx1)
-    """
-    print(len(args))
-    for v in args:
-        print(v)
-    pass
-
-
-def slNorder(order):
-    x = symbols('x', real=True)
-    return [x**i for i in range(order)]
-
-
 def solveNOrderFunction(*args):
     """
     根据输入参数自动生成n阶方程组,并求解方程系数
@@ -102,6 +24,7 @@ def solveNOrderFunction(*args):
         [k0,k1...kn], order
     """
     order = 0
+    error = 0
     # 与输入参数个数等阶数
     for value_i in args:
         order += len(value_i) - 1
@@ -127,64 +50,24 @@ def solveNOrderFunction(*args):
                     matrix_x[index, col_i] = col_i * matrix_x[index -
                                                               1, col_i - 1]
             index += 1
-
-    print(matrix_x)
-    print(matrix_y)
-
-    coef = np.linalg.solve(matrix_x, matrix_y)  # 系数,列向量
+    try:
+        coef = np.linalg.solve(matrix_x, matrix_y)  # 系数,列向量
+        y = np.dot(matrix_x, coef)
+        print('y=', y)
+        error = np.sqrt(sum((y - matrix_y)**2))
     # print('value x coef', np.dot(value_s, coef))
-    return coef, order
+    except RuntimeError:
+        coef = []
+        order = 0
+        error = 0
+    finally:
+        return coef, order, error
 
 
-def solveNOrderLS(*args):
+def getNOrderOutput(xdata, coef):
     """
-    给出一系列的ls控制点参数, l = f(s)
-    input:[(s0,l0,dl0,ddl0),(s1,l1,dl1,ddl1),(s2,l2,dl2),(s3,l3)]
-        每个控制点的参数可以不是4个,但是需要按照 s/l/dl/ddl的顺序来给
-    output:
-        求解出来的sl方程的系数以及阶数
+    根据输入的xdata数据,求以coef为系数的n阶函数的输出值
     """
-    order = sum([(len(point_parameter) - 1)
-                 for point_parameter in args])  # 因为阶数只和l/dl/ddl相关,所以要减掉s的数量
-    value_l = np.zeros((order, 1))  # l/dl/ddl 列向量
-    index_l = 0  # 列向量索引
-    value_s = np.zeros((order, order))  # nxn的s矩阵
-
-    for point in args:
-        s = point[0]  # s的值
-        """
-        [[s^0   s^1     s^2     s^3 ... s^order],
-         [0     1s^0    2s^1    3s^2... order s^(order-1)],
-         ....]]
-        """
-        x = symbols('x', real=True)
-        func = [x**i for i in range(order)
-                ]  # [s^0   s^1     s^2     s^3 ... s^order]
-        for value in point[1:]:
-            value_l[index_l, 0] = value
-            value_s[index_l, :] = [
-                func_i.evalf(subs={x: s}) for func_i in func
-            ]  # 求[s^0   s^1     s^2     s^3 ... s^order]实际值
-            index_l += 1
-            func = [diff(func_i, x, 1) for func_i in func]  # 求1阶导数表达式
-        pass
-    pass
-    # print('value_l', value_l)
-    coef = np.linalg.solve(value_s, value_l)  # 系数,列向量
-    # print('value x coef', np.dot(value_s, coef))
-    return coef, order
-
-
-def NOrderSL(s, coef):
-    l = []
-    order = len(coef)
-    for si in s:
-        li = sum([coef[i] * si**i for i in range(order)])
-        l.extend(li)
-    return l
-
-
-def NOrderFunction(xdata, coef):
     ydata = []
     order = len(coef)
     for x in xdata:
@@ -194,23 +77,23 @@ def NOrderFunction(xdata, coef):
 
 
 if __name__ == "__main__":
-    s0 = (501.0, 0.0, 1 / 5.0, 0.0)
-    s1 = (510.0, 1.0)
-    s2 = (523.0, 1.0)
-    s3 = (570.0, 1.0, 1 / 5.0, 0.0)
-    coef, order = solveNOrderFunction(s0, s1, s2, s3)
-    s = np.linspace(501.0, 570.0, 5000)
+    s0 = (-3.2751, 5.055, 3.4671, -4.5613)
+    s1 = (-1.5783, 6.3587)
+    s2 = (3.1471, -4.5666, 1.429, -9.5802)
 
-    l = NOrderFunction(s, coef)
+    # s0 = (501.0, 0.0, 1 / 5.0, 0.0)
+    # s1 = (510.0, 1.0)
+    # s2 = (523.0, 1.0)
+    # s3 = (570.0, 1.0, 1 / 5.0, 0.0)
+    coef, order, error = solveNOrderFunction(s0, s1, s2)
+    print('error=', error)
+    s = np.linspace(s0[0], s2[0], math.ceil(s2[0] + 1 - s0[0]) * 10)
+
+    l = getNOrderOutput(s, coef)
     # print(l)
     plt.plot(s, l)
     plt.plot([s0[0]], [s0[1]], 'o')
     plt.plot([s1[0]], [s1[1]], 'o')
     plt.plot([s2[0]], [s2[1]], 'o')
-    plt.plot([s3[0]], [s3[1]], 'o')
-
-    coef, order = solveNOrderLS(s0, s1, s2, s3)
-    l = NOrderSL(s, coef)
-    plt.plot(s, l, '-')
 
     plt.show()
